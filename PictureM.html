@@ -1,0 +1,1055 @@
+  // SVG- und Bilddaten speichern
+  let uploadedSVGData = null;
+  let uploadedImgData = null;
+  const customShapeSelect = document.getElementById('customShapeSelect');
+  const svgUploadBox = document.getElementById('svgUploadBox');
+  const svgFileInput = document.getElementById('svgFileInput');
+  const imgUploadBox = document.getElementById('imgUploadBox');
+  const imgFileInput = document.getElementById('imgFileInput');
+
+  customShapeSelect.addEventListener('change', function() {
+    svgUploadBox.style.display = (this.value === 'svg') ? '' : 'none';
+    imgUploadBox.style.display = (this.value === 'face' || this.value === 'contour') ? '' : 'none';
+  });
+  svgFileInput && svgFileInput.addEventListener('change', function(e) {
+    const file = e.target.files[0];
+    if (file) {
+      const reader = new FileReader();
+      reader.onload = function(evt) {
+        uploadedSVGData = evt.target.result;
+      };
+      reader.readAsText(file);
+    }
+  });
+  imgFileInput && imgFileInput.addEventListener('change', function(e) {
+    const file = e.target.files[0];
+    if (file) {
+      const reader = new FileReader();
+      reader.onload = function(evt) {
+        uploadedImgData = evt.target.result;
+      };
+      reader.readAsDataURL(file);
+    }
+  });
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Collage System – Drag, Größe & Download</title>
+
+  <style>
+    * { box-sizing: border-box; }
+    html, body {
+      margin: 0; padding: 0; height: 100%;
+      background: #fff; color: #000;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    }
+
+    .layout { display: flex; height: 100%; background: #fff; }
+    .sidebar {
+      width: 240px; background: #fff; border-right: 1px solid #000;
+      padding: 16px; display: flex; flex-direction: column; gap: 24px;
+    }
+
+    .section { display: flex; flex-direction: column; gap: 12px; }
+    .section-header {
+      font-size: 11px; font-weight: 600; text-transform: uppercase;
+      border-bottom: 1px solid #000; padding-bottom: 4px;
+    }
+
+    label { font-size: 12px; }
+
+    .text-input, .select-input, .range-input {
+      width: 100%; font-size: 12px; padding: 1px 5px;
+      border: 1px solid #000; background: #fff; color: #000;
+    }
+
+    .color-input {
+      width: 100%;
+      height: 28px;
+      border: 1px solid #000;
+      padding: 0;
+      background: #fff;
+      cursor: pointer;
+    }
+
+    .button {
+      background: #fff; border: 4px solid #000; font-size: 22px;
+      font-weight: 600; padding: 8px 10px; cursor: pointer;
+    }
+    .button:active { background: #000; color: #fff; }
+
+    .debug-box {
+      border: 1px solid #000; background: #fff; color: #000;
+      font-size: 11px; padding: 8px; white-space: pre-wrap;
+      min-height: 60px; max-height: 160px; overflow: auto;
+    }
+
+    .main { flex: 1; display: flex; flex-direction: column; background: #fff; }
+    .main-header { border-bottom: 1px solid #000; padding: 16px; }
+    .main-title { font-size: 12px; font-weight: 600; text-transform: uppercase; }
+
+    .collage-region { flex: 1; display: flex; flex-direction: column; border-left: 1px solid #000; }
+    .collage-area { 
+      position: relative; 
+      flex: 1; 
+      border-top: 1px solid #000; 
+      overflow: hidden; 
+      background: #222;
+      width: 100%;
+      height: 100%;
+    }
+  
+    #scene-container { 
+      width: 100%; 
+      height: 100%; 
+      position: absolute;
+      left: 0;
+      top: 0;
+    }
+
+    .collage-item {
+      position: absolute; border: 0px solid #000;
+      overflow: hidden; mix-blend-mode: multiply;
+      transform-origin: center center;
+      cursor: move;
+    }
+
+    .collage-item img {
+      width: 100%; height: 100%; object-fit: cover; display: block;
+      pointer-events: none; user-select: none;
+    }
+
+    .tint-layer {
+      position: absolute;
+      left: 0; top: 0; width: 100%; height: 100%;
+      pointer-events: none;
+    }
+  </style>
+</head>
+<body>
+
+<div class="layout">
+  <aside class="sidebar">
+    <div class="section">
+      <div class="section-header">Einstellungen</div>
+
+      <label>Bildanzahl (1–50)</label>
+      <input id="imageCountInput" class="text-input" type="number" min="1" max="50" value="8" />
+
+      <label>3D Form</label>
+      <select id="shapeSelect" class="select-input">
+        <option value="cube" selected>Würfel</option>
+        <option value="sphere">Kugel</option>
+        <option value="cylinder">Zylinder</option>
+        <option value="torus">Torus (Ring)</option>
+      </select>
+
+      <label>Rotationsgeschwindigkeit (0-100)</label>
+      <input id="speedRange" class="range-input" type="range" min="0" max="100" value="50" />
+      <span id="speedValue" style="font-size:11px;">Geschwindigkeit: 50%</span>
+
+      <label>Überlagerungsmuster</label>
+      <select id="patternSelect" class="select-input">
+        <option value="random" selected>Zufällig</option>
+        <option value="spiral">Spirale</option>
+        <option value="circle">Kreisförmig</option>
+        <option value="wave">Wellenform</option>
+        <option value="grid">Gitter</option>
+        <option value="helix">Helix</option>
+        <option value="diamond">Diamant</option>
+        <option value="pyramid">Pyramide</option>
+        <option value="clusters">Cluster</option>
+      </select>
+
+
+
+      <label>Bildgröße (50–400)</label>
+      <input id="sizeRange" class="range-input" type="range" min="50" max="400" value="180" />
+      <span id="sizeValue" style="font-size:11px;">Aktuelle Größe: 180px</span>
+
+      <label>Shape-Auswahl</label>
+      <select id="customShapeSelect" class="select-input">
+        <option value="cube" selected>Würfel</option>
+        <option value="sphere">Kugel</option>
+        <option value="cylinder">Zylinder</option>
+        <option value="torus">Torus (Ring)</option>
+        <option value="star">Stern</option>
+        <option value="heart">Herz</option>
+        <option value="svg">Eigenes SVG</option>
+        <option value="face">Gesicht (aus Bild)</option>
+        <option value="contour">Bildkontur (aus Bild)</option>
+      </select>
+
+      <div id="svgUploadBox" style="display:none;">
+        <label>SVG-Datei hochladen</label>
+        <input id="svgFileInput" type="file" accept="image/svg+xml" />
+      </div>
+      <div id="imgUploadBox" style="display:none;">
+        <label>Bild für Gesicht/Kontur hochladen</label>
+        <input id="imgFileInput" type="file" accept="image/*" />
+      </div>
+
+      <label>Form-Verzerrung (Randomness)</label>
+      <input id="randomnessRange" class="range-input" type="range" min="0" max="100" value="0" />
+      <span id="randomnessValue" style="font-size:11px;">Verzerrung: 0%</span>
+
+      <label>Morphing-Effekt</label>
+      <select id="morphSelect" class="select-input">
+        <option value="none" selected>Kein Morphing</option>
+        <option value="scale">Pulsieren (Scale)</option>
+        <option value="morph">Form verändern</option>
+        <option value="bounce">Hüpfen</option>
+        <option value="spin">Rotation</option>
+        <option value="wave">Welle</option>
+        <option value="twist">Verdrehung</option>
+        <option value="bloom">Aufblühen</option>
+        <option value="dissolve">Auflösen</option>
+      </select>
+
+      <label>Morphing-Geschwindigkeit</label>
+      <input id="morphSpeedRange" class="range-input" type="range" min="0" max="100" value="50" />
+      <span id="morphSpeedValue" style="font-size:11px;">Morph-Speed: 50%</span>
+
+      <label>Morphing-Intensität</label>
+      <input id="morphIntensityRange" class="range-input" type="range" min="0" max="100" value="50" />
+      <span id="morphIntensityValue" style="font-size:11px;">Morph-Intensität: 50%</span>
+
+      <label>Objekt-Abstand</label>
+      <input id="spreadRange" class="range-input" type="range" min="10" max="200" value="100" />
+      <span id="spreadValue" style="font-size:11px;">Abstand: 100%</span>
+
+      <button class="button" id="generateBtn">[ generate / rebuild collage ]</button>
+      <button class="button" id="downloadBtn">[ download collage as PNG ]</button>
+    </div>
+
+    <div class="section">
+      <div class="section-header">System / Debug</div>
+      <div id="debugOut" class="debug-box">(log)</div>
+    </div>
+  </aside>
+
+  <main class="main">
+    <header class="main-header"><div class="main-title">collage output</div></header>
+    <section class="collage-region">
+      <div id="collageArea" class="collage-area">
+        <div id="scene-container"></div>
+      </div>
+    </section>
+  </main>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/tween.js/18.6.4/tween.umd.js"></script>
+
+<script>
+  const imagePool = Array.from({length:100}, (_,i)=>`https://picsum.photos/500/500?random=${i+1}`);
+
+  // Three.js Globals
+  let scene, camera, renderer, controls;
+  let shapes = [];
+  const textureLoader = new THREE.TextureLoader();
+  // allow cross-origin textures where possible so we can export the WebGL canvas
+  try { textureLoader.crossOrigin = 'anonymous'; } catch(e) {}
+  
+  const collageArea     = document.getElementById("collageArea");
+  const container       = document.getElementById("scene-container");
+  const imageCountInp   = document.getElementById("imageCountInput");
+  const shapeSelect     = document.getElementById("shapeSelect");
+  const speedRange      = document.getElementById("speedRange");
+  const speedValue      = document.getElementById("speedValue");
+  const patternSelect   = document.getElementById("patternSelect");
+  const randomnessRange = document.getElementById("randomnessRange");
+  const randomnessValue = document.getElementById("randomnessValue");
+  const morphSelect     = document.getElementById("morphSelect");
+  const morphSpeedRange = document.getElementById("morphSpeedRange");
+  const morphSpeedValue = document.getElementById("morphSpeedValue");
+  const spreadRange     = document.getElementById("spreadRange");
+  const spreadValue     = document.getElementById("spreadValue");
+  // blendModeSel und opacityInp entfernt
+  const sizeRange     = document.getElementById("sizeRange");
+  const sizeValue     = document.getElementById("sizeValue");
+  const generateBtn   = document.getElementById("generateBtn");
+  const downloadBtn   = document.getElementById("downloadBtn");
+  const debugOut      = document.getElementById("debugOut");
+  
+    // SVG- und Bilddaten speichern (korrekt im Script-Block)
+    let uploadedSVGData = null;
+    let uploadedImgData = null;
+    const customShapeSelect = document.getElementById('customShapeSelect');
+    const svgUploadBox = document.getElementById('svgUploadBox');
+    const svgFileInput = document.getElementById('svgFileInput');
+    const imgUploadBox = document.getElementById('imgUploadBox');
+    const imgFileInput = document.getElementById('imgFileInput');
+    customShapeSelect.addEventListener('change', function() {
+      svgUploadBox.style.display = (this.value === 'svg') ? '' : 'none';
+      imgUploadBox.style.display = (this.value === 'face' || this.value === 'contour') ? '' : 'none';
+    });
+    svgFileInput && svgFileInput.addEventListener('change', function(e) {
+      const file = e.target.files[0];
+      if (file) {
+        const reader = new FileReader();
+        reader.onload = function(evt) {
+          uploadedSVGData = evt.target.result;
+        };
+        reader.readAsText(file);
+      }
+    });
+    imgFileInput && imgFileInput.addEventListener('change', function(e) {
+      const file = e.target.files[0];
+      if (file) {
+        const reader = new FileReader();
+        reader.onload = function(evt) {
+          uploadedImgData = evt.target.result;
+        };
+        reader.readAsDataURL(file);
+      }
+    });
+
+  function rand(min,max){
+    return Math.floor(Math.random()*(max-min+1))+min;
+  }
+
+  function getRandomImages(n){
+    return Array.from({length:n},()=>imagePool[rand(0,imagePool.length-1)]);
+  }
+
+  function makeDraggable(el) {
+    let isDown = false;
+    let offsetX, offsetY;
+
+    el.addEventListener('mousedown', e => {
+      isDown = true;
+      const rect = el.getBoundingClientRect();
+      offsetX = e.clientX - rect.left;
+      offsetY = e.clientY - rect.top;
+      el.style.zIndex = 10000;
+    });
+
+    window.addEventListener('mouseup', () => {
+      isDown = false;
+      el.style.zIndex = rand(1,9999);
+    });
+
+    window.addEventListener('mousemove', e => {
+      if (!isDown) return;
+      const areaRect = collageArea.getBoundingClientRect();
+      const newX = e.clientX - areaRect.left - offsetX;
+      const newY = e.clientY - areaRect.top - offsetY;
+      el.style.left = newX + "px";
+      el.style.top  = newY + "px";
+    });
+  }
+
+  // Three.js Setup
+  function init3DScene() {
+    try {
+      // Scene Setup
+      scene = new THREE.Scene();
+      scene.background = new THREE.Color(0xffffff);
+      console.log("Scene created");
+    
+      // Camera Setup
+      camera = new THREE.PerspectiveCamera(75, container.clientWidth / container.clientHeight, 0.1, 1000);
+      renderer = new THREE.WebGLRenderer({ 
+        antialias: true,
+        alpha: true,
+        // preserve drawing buffer so we can read pixels / toDataURL for export
+        preserveDrawingBuffer: true
+      });
+      
+      if (!renderer) {
+        throw new Error("Could not create WebGL renderer");
+      }
+
+      renderer.setSize(container.clientWidth, container.clientHeight);
+      renderer.setPixelRatio(window.devicePixelRatio);
+      
+      // Clear any existing canvas
+      while (container.firstChild) {
+        container.removeChild(container.firstChild);
+      }
+      
+      container.appendChild(renderer.domElement);
+      console.log("Renderer created and attached");    // Orbit Controls für Kamera-Rotation
+    controls = new THREE.OrbitControls(camera, renderer.domElement);
+    controls.enableDamping = true;
+    controls.dampingFactor = 0.05;
+
+    // Kamera-Position
+    camera.position.z = 5;
+
+    // Beleuchtung
+    const ambientLight = new THREE.AmbientLight(0xffffff, 0.5);
+    scene.add(ambientLight);
+    const directionalLight = new THREE.DirectionalLight(0xffffff, 0.5);
+    directionalLight.position.set(0, 1, 2);
+    scene.add(directionalLight);
+
+    // Animation Loop
+    function animate() {
+      try {
+        requestAnimationFrame(animate);
+        if (controls) controls.update();
+        if (renderer && scene && camera) {
+          renderer.render(scene, camera);
+        }
+      } catch (err) {
+        console.error("Animation error:", err);
+      }
+    }
+    animate();
+    console.log("Animation loop started");
+
+    // Resize Handler
+    window.addEventListener('resize', () => {
+      camera.aspect = container.clientWidth / container.clientHeight;
+      camera.updateProjectionMatrix();
+      renderer.setSize(container.clientWidth, container.clientHeight);
+    });
+    } catch (err) {
+      console.error("Scene initialization error:", err);
+    }
+  }
+
+  // Erstelle 3D-Form mit Bild-Textur und Verzerrung
+  function create3DShape(imageUrl, size, shapeType, randomness) {
+    return new Promise((resolve) => {
+      textureLoader.load(imageUrl, (texture) => {
+        let geometry, material;
+        const noiseScale = randomness / 50; // 0-2 range for noise
+
+        // SVG-Shape
+        if (shapeType === 'svg' && uploadedSVGData && window.THREE && THREE.SVGLoader) {
+          const loader = new THREE.SVGLoader();
+          const svg = loader.parse(uploadedSVGData);
+          const shapes = svg.paths.flatMap(p => p.toShapes(true));
+          geometry = new THREE.ExtrudeGeometry(shapes, { depth: size/4, bevelEnabled: false });
+          material = new THREE.MeshStandardMaterial({ map: texture });
+        } else if (shapeType === 'star') {
+          // Stern-Shape
+          const starShape = new THREE.Shape();
+          const spikes = 5, outer = size/2, inner = size/4;
+          for (let i = 0; i < spikes * 2; i++) {
+            const r = (i % 2 === 0) ? outer : inner;
+            const a = (i / (spikes * 2)) * Math.PI * 2;
+            if (i === 0) starShape.moveTo(Math.cos(a)*r, Math.sin(a)*r);
+            else starShape.lineTo(Math.cos(a)*r, Math.sin(a)*r);
+          }
+          starShape.closePath();
+          geometry = new THREE.ExtrudeGeometry(starShape, { depth: size/4, bevelEnabled: false });
+          material = new THREE.MeshStandardMaterial({ map: texture });
+        } else if (shapeType === 'heart') {
+          // Herz-Shape
+          const x = 0, y = 0;
+          const heartShape = new THREE.Shape();
+          heartShape.moveTo(x, y + size/8);
+          heartShape.bezierCurveTo(x, y + size/2, x - size/2, y + size/2, x - size/2, y + size/8);
+          heartShape.bezierCurveTo(x - size/2, y - size/4, x, y - size/2, x, y - size/4);
+          heartShape.bezierCurveTo(x, y - size/2, x + size/2, y - size/4, x + size/2, y + size/8);
+          heartShape.bezierCurveTo(x + size/2, y + size/2, x, y + size/2, x, y + size/8);
+          geometry = new THREE.ExtrudeGeometry(heartShape, { depth: size/4, bevelEnabled: false });
+          material = new THREE.MeshStandardMaterial({ map: texture });
+        } else if (shapeType === 'face' && uploadedImgData) {
+          // Gesichtserkennung mit face-api.js (Landmark-Punkte als Shape)
+          // (Pseudo-Code, da face-api.js async ist)
+          // Hier sollte ein Promise mit face-api.js verwendet werden
+          // resolve(shape) nach Erkennung
+          // ...
+          geometry = new THREE.SphereGeometry(size/2, 32, 32); // Platzhalter
+          material = new THREE.MeshStandardMaterial({ map: texture });
+        } else if (shapeType === 'contour' && uploadedImgData) {
+          // Kontur mit imagetracerjs (SVG aus Bild)
+          // (Pseudo-Code, da imagetracerjs async ist)
+          // resolve(shape) nach SVG-Parsing
+          // ...
+          geometry = new THREE.BoxGeometry(size, size, size); // Platzhalter
+          material = new THREE.MeshStandardMaterial({ map: texture });
+        } else {
+          // Standard-Formen
+          switch(shapeType) {
+            case 'sphere':
+              geometry = new THREE.SphereGeometry(size/2, 32, 32);
+              material = new THREE.MeshStandardMaterial({ map: texture });
+              break;
+            case 'cylinder':
+              geometry = new THREE.CylinderGeometry(size/2, size/2, size, 32);
+              material = new THREE.MeshStandardMaterial({ map: texture });
+              break;
+            case 'torus':
+              geometry = new THREE.TorusGeometry(size/2, size/4, 16, 100);
+              material = new THREE.MeshStandardMaterial({ map: texture });
+              break;
+            default: // cube
+              geometry = new THREE.BoxGeometry(size, size, size);
+              material = Array(6).fill().map(() => new THREE.MeshStandardMaterial({ map: texture }));
+          }
+        }
+
+        // Füge Verzerrung hinzu wenn randomness > 0
+        if (randomness > 0 && geometry.attributes.position) {
+          const positions = geometry.attributes.position.array;
+          for (let i = 0; i < positions.length; i += 3) {
+            positions[i] += (Math.random() - 0.5) * noiseScale * size;
+            positions[i + 1] += (Math.random() - 0.5) * noiseScale * size;
+            positions[i + 2] += (Math.random() - 0.5) * noiseScale * size;
+          }
+          geometry.computeVertexNormals();
+        }
+
+        const shape = new THREE.Mesh(geometry, material);
+        resolve(shape);
+      });
+    });
+  }
+
+  // Berechne Position basierend auf Muster und Spread-Faktor
+  function calculatePosition(pattern, index, total, baseDistance, spread) {
+    const scaledDistance = baseDistance * (spread / 100);
+    switch(pattern) {
+      case 'spiral':
+        const angle = (index / total) * Math.PI * 2 * 3;
+        const radius = (index / total) * scaledDistance;
+        return {
+          x: Math.cos(angle) * radius,
+          y: Math.sin(angle) * radius,
+          z: (index / total) * scaledDistance - scaledDistance/2
+        };
+      case 'circle':
+        const circleAngle = (index / total) * Math.PI * 2;
+        return {
+          x: Math.cos(circleAngle) * scaledDistance,
+          y: Math.sin(circleAngle) * scaledDistance,
+          z: Math.sin(index/2) * (scaledDistance/2)
+        };
+      case 'wave':
+        return {
+          x: (index / total) * scaledDistance * 2 - scaledDistance,
+          y: Math.sin(index * 0.5) * scaledDistance/2,
+          z: Math.cos(index * 0.5) * scaledDistance/2
+        };
+      case 'grid':
+        const gridSize = Math.ceil(Math.sqrt(total));
+        const gridX = (index % gridSize) - gridSize/2;
+        const gridY = Math.floor(index / gridSize) - gridSize/2;
+        return {
+          x: gridX * scaledDistance/2,
+          y: gridY * scaledDistance/2,
+          z: Math.sin(gridX + gridY) * scaledDistance/4
+        };
+      case 'helix':
+        const helixAngle = (index / total) * Math.PI * 4;
+        const helixHeight = (index / total) * scaledDistance * 2 - scaledDistance;
+        return {
+          x: Math.cos(helixAngle) * scaledDistance/2,
+          y: helixHeight,
+          z: Math.sin(helixAngle) * scaledDistance/2
+        };
+      case 'diamond':
+        const diamondAngle = (index / total) * Math.PI * 2;
+        const diamondLayer = Math.floor((index / total) * 4);
+        const layerRadius = (1 - Math.abs(diamondLayer - 2)/2) * scaledDistance;
+        return {
+          x: Math.cos(diamondAngle) * layerRadius,
+          y: (diamondLayer - 2) * scaledDistance/3,
+          z: Math.sin(diamondAngle) * layerRadius
+        };
+      case 'pyramid':
+        const layer = Math.floor(Math.sqrt(index));
+        const itemsInLayer = layer * 4;
+        const itemInLayer = index - layer * layer;
+        const pyramidAngle = (itemInLayer / itemsInLayer) * Math.PI * 2;
+        const pyramidRadius = layer * scaledDistance/3;
+        return {
+          x: Math.cos(pyramidAngle) * pyramidRadius,
+          y: (total/layer) * scaledDistance/5,
+          z: Math.sin(pyramidAngle) * pyramidRadius
+        };
+      case 'clusters':
+        // Create 3-4 cluster centers
+        const clusterCount = 3 + (index % 2);
+        const clusterIndex = index % clusterCount;
+        const clusterCenters = Array.from({length: clusterCount}, (_, i) => ({
+          x: Math.cos(i * Math.PI * 2 / clusterCount) * scaledDistance/2,
+          y: Math.sin(i * Math.PI * 2 / clusterCount) * scaledDistance/2,
+          z: (i - clusterCount/2) * scaledDistance/3
+        }));
+        const cluster = clusterCenters[clusterIndex];
+        // Add random offset from cluster center
+        return {
+          x: cluster.x + (Math.random() - 0.5) * scaledDistance/2,
+          y: cluster.y + (Math.random() - 0.5) * scaledDistance/2,
+          z: cluster.z + (Math.random() - 0.5) * scaledDistance/2
+        };
+      default: // random
+        return {
+          x: rand(-scaledDistance, scaledDistance),
+          y: rand(-scaledDistance, scaledDistance),
+          z: rand(-scaledDistance, scaledDistance)
+        };
+    }
+  }
+
+  async function buildCollage(){
+    // Clear existing scene
+    shapes.forEach(shape => scene.remove(shape));
+    shapes = [];
+
+    const n = parseInt(imageCountInp.value) || 8;
+    const baseSize = (parseInt(sizeRange.value) || 180) / 100; // Skalieren für 3D-Raum
+    const speed = parseFloat(speedRange.value) / 5000; // Rotation speed
+    const pattern = patternSelect.value;
+    // Shape-Auswahl: customShapeSelect überschreibt shapeSelect
+    let shapeType = shapeSelect.value;
+    if (customShapeSelect.value && customShapeSelect.value !== 'cube') {
+      shapeType = customShapeSelect.value;
+    }
+    const randomness = parseFloat(randomnessRange.value) / 100;
+    const morphType = morphSelect.value;
+    const morphSpeed = parseFloat(morphSpeedRange.value) / 2500;
+    const spread = parseFloat(spreadRange.value);
+  // blend entfernt
+
+    debugOut.textContent =
+      "[3D Collage Setup]\n" +
+      "count=" + n + "\n" +
+      "shape=" + shapeType + "\n" +
+      "pattern=" + pattern + "\n" +
+      "baseSize=" + baseSize + "\n" +
+      "randomness=" + randomness + "\n" +
+      "morphType=" + morphType + "\n" +
+      "spread=" + spread;
+
+    const imgs = getRandomImages(n);
+
+    // Erstelle 3D-Formen für jedes Bild
+    for (let i = 0; i < imgs.length; i++) {
+      const src = imgs[i];
+      const sizeVar = (rand(-50, 50) / 500); // Skaliert für 3D
+      const shapeSize = baseSize + sizeVar;
+
+      const shape = await create3DShape(src, shapeSize, shapeType, randomness);
+      
+      // Position basierend auf gewähltem Muster und Spread
+      const pos = calculatePosition(pattern, i, imgs.length, 3, spread);
+      shape.position.set(pos.x, pos.y, pos.z);
+      
+      // Zufällige Start-Rotation
+      shape.rotation.x = rand(0, Math.PI * 2);
+      shape.rotation.y = rand(0, Math.PI * 2);
+      shape.rotation.z = rand(0, Math.PI * 2);
+      
+      // Animation mit einstellbarer Geschwindigkeit
+      shape.userData.rotationSpeed = {
+        x: rand(-speed, speed),
+        y: rand(-speed, speed),
+        z: rand(-speed, speed)
+      };
+
+          // Morphing-Effekt und Shape-Transformation anwenden
+      const morphType = morphSelect.value;
+      shape.userData.originalGeometry = shape.geometry.clone();
+      shape.userData.currentShapeType = shapeType;
+      
+      if (morphType !== 'none') {
+        const duration = 1000 + rand(-200, 200);
+        applyMorphEffect(shape, morphType, duration);
+      }
+      
+      scene.add(shape);
+      shapes.push(shape);
+    }
+    
+    // Update debug info
+    debugOut.textContent =
+      "[3D Collage Status]\n" +
+      "Objekte erstellt: " + shapes.length + "\n" +
+      "Aktuelle Form: " + shapeType + "\n" +
+      "Muster: " + pattern;
+  }
+
+  // Animation Update mit TWEEN.js
+  function updateShapes() {
+    TWEEN.update();
+    
+    shapes.forEach(shape => {
+      // Basis-Rotation
+      if (shape.userData.rotationSpeed) {
+        shape.rotation.x += shape.userData.rotationSpeed.x;
+        shape.rotation.y += shape.userData.rotationSpeed.y;
+        shape.rotation.z += shape.userData.rotationSpeed.z;
+      }
+    });
+    
+    requestAnimationFrame(updateShapes);
+  }
+
+  // Neue Morphing-Funktionen mit TWEEN.js und Shape-Transformation
+  function applyMorphEffect(shape, effectType, duration = 1000) {
+    const morphSpeed = parseFloat(morphSpeedRange.value) / 50; // 0-2 range
+    const morphIntensity = parseFloat(document.getElementById('morphIntensityRange').value) / 50;
+    const baseScale = shape.scale.x;
+    
+    // Stoppe vorherige Animationen
+    if (shape.userData.currentTween) {
+      shape.userData.currentTween.stop();
+    }
+    
+    // Liste der verfügbaren Formen
+    const shapeTypes = ['cube', 'sphere', 'cylinder', 'torus'];
+    
+    // Funktion zum Erstellen einer neuen Geometrie
+    function createNewGeometry(type, size) {
+      switch(type) {
+        case 'sphere':
+          return new THREE.SphereGeometry(size/2, 32, 32);
+        case 'cylinder':
+          return new THREE.CylinderGeometry(size/2, size/2, size, 32);
+        case 'torus':
+          return new THREE.TorusGeometry(size/2, size/4, 16, 100);
+        default: // cube
+          return new THREE.BoxGeometry(size, size, size);
+      }
+    }
+
+    // Helper function for smooth transitions
+    function smoothTransition(from, to, progress) {
+      return from + (to - from) * (1 - Math.cos(progress * Math.PI)) / 2;
+    }
+
+    switch(effectType) {
+      case 'scale':
+        // Enhanced pulsating effect with intensity control
+        const scaleAmount = 1 + (morphIntensity * 0.8);
+        new TWEEN.Tween(shape.scale)
+          .to({ 
+            x: baseScale * scaleAmount, 
+            y: baseScale * scaleAmount, 
+            z: baseScale * scaleAmount 
+          }, duration / morphSpeed)
+          .easing(TWEEN.Easing.Sinusoidal.InOut)
+          .yoyo(true)
+          .repeat(Infinity)
+          .start();
+        break;
+
+      case 'morph':
+        // Improved form morphing with smoother transitions
+        const currentType = shape.userData.currentShapeType;
+        const availableTypes = shapeTypes.filter(type => type !== currentType);
+        const newType = availableTypes[Math.floor(Math.random() * availableTypes.length)];
+        const size = shape.geometry.parameters.radius || shape.geometry.parameters.width || 1;
+        
+        const newGeometry = createNewGeometry(newType, size);
+        const oldGeometry = shape.geometry;
+        const oldPositions = oldGeometry.attributes.position.array;
+        const newPositions = newGeometry.attributes.position.array;
+        
+        const morphData = {
+          progress: 0,
+          oldPositions: [...oldPositions],
+          newPositions: [...newPositions]
+        };
+
+        shape.userData.currentTween = new TWEEN.Tween(morphData)
+          .to({ progress: 1 }, duration / morphSpeed)
+          .easing(TWEEN.Easing.Sinusoidal.InOut)
+          .onUpdate(() => {
+            const positions = shape.geometry.attributes.position.array;
+            for (let i = 0; i < positions.length; i++) {
+              positions[i] = smoothTransition(
+                morphData.oldPositions[i], 
+                morphData.newPositions[i], 
+                morphData.progress
+              );
+            }
+            shape.geometry.attributes.position.needsUpdate = true;
+          })
+          .onComplete(() => {
+            shape.geometry = newGeometry;
+            shape.userData.currentShapeType = newType;
+            setTimeout(() => {
+              applyMorphEffect(shape, 'morph', duration);
+            }, 1000 / morphSpeed);
+          })
+          .start();
+        break;
+
+      case 'bounce':
+        // Enhanced bounce with intensity control
+        const bounceHeight = morphIntensity * 2;
+        const startY = shape.position.y;
+        new TWEEN.Tween(shape.position)
+          .to({ y: startY + bounceHeight }, duration / morphSpeed)
+          .easing(TWEEN.Easing.Bounce.InOut)
+          .yoyo(true)
+          .repeat(Infinity)
+          .start();
+        break;
+
+      case 'spin':
+        // Enhanced rotation with multiple axes
+        const spinTarget = { x: 0, y: 0, z: 0 };
+        new TWEEN.Tween(spinTarget)
+          .to({ 
+            x: Math.PI * 2 * morphIntensity,
+            y: Math.PI * morphIntensity,
+            z: Math.PI / 2 * morphIntensity
+          }, duration / morphSpeed)
+          .easing(TWEEN.Easing.Sinusoidal.InOut)
+          .repeat(Infinity)
+          .onUpdate(() => {
+            shape.rotation.x = spinTarget.x;
+            shape.rotation.y = spinTarget.y;
+            shape.rotation.z = spinTarget.z;
+          })
+          .start();
+        break;
+
+      case 'wave':
+        // Wave deformation effect
+        const waveData = { time: 0 };
+        shape.userData.originalVertices = [...shape.geometry.attributes.position.array];
+        
+        new TWEEN.Tween(waveData)
+          .to({ time: Math.PI * 2 }, duration / morphSpeed)
+          .repeat(Infinity)
+          .onUpdate(() => {
+            const positions = shape.geometry.attributes.position.array;
+            for(let i = 0; i < positions.length; i += 3) {
+              const y = shape.userData.originalVertices[i + 1];
+              positions[i] = shape.userData.originalVertices[i] + 
+                Math.sin(waveData.time + y) * morphIntensity * 0.2;
+              positions[i + 2] = shape.userData.originalVertices[i + 2] + 
+                Math.cos(waveData.time + y) * morphIntensity * 0.2;
+            }
+            shape.geometry.attributes.position.needsUpdate = true;
+          })
+          .start();
+        break;
+
+      case 'twist':
+        // Twist effect around Y axis
+        const twistData = { angle: 0 };
+        shape.userData.originalVertices = [...shape.geometry.attributes.position.array];
+        
+        new TWEEN.Tween(twistData)
+          .to({ angle: Math.PI * 2 }, duration / morphSpeed)
+          .repeat(Infinity)
+          .onUpdate(() => {
+            const positions = shape.geometry.attributes.position.array;
+            for(let i = 0; i < positions.length; i += 3) {
+              const y = shape.userData.originalVertices[i + 1];
+              const x = shape.userData.originalVertices[i];
+              const z = shape.userData.originalVertices[i + 2];
+              const angle = twistData.angle * y * morphIntensity;
+              positions[i] = x * Math.cos(angle) - z * Math.sin(angle);
+              positions[i + 2] = x * Math.sin(angle) + z * Math.cos(angle);
+            }
+            shape.geometry.attributes.position.needsUpdate = true;
+          })
+          .start();
+        break;
+
+      case 'bloom':
+        // Blooming effect - vertices move outward
+        const bloomData = { scale: 1 };
+        shape.userData.originalVertices = [...shape.geometry.attributes.position.array];
+        
+        new TWEEN.Tween(bloomData)
+          .to({ scale: 1 + morphIntensity }, duration / morphSpeed)
+          .yoyo(true)
+          .repeat(Infinity)
+          .easing(TWEEN.Easing.Sinusoidal.InOut)
+          .onUpdate(() => {
+            const positions = shape.geometry.attributes.position.array;
+            for(let i = 0; i < positions.length; i += 3) {
+              positions[i] = shape.userData.originalVertices[i] * bloomData.scale;
+              positions[i + 1] = shape.userData.originalVertices[i + 1] * bloomData.scale;
+              positions[i + 2] = shape.userData.originalVertices[i + 2] * bloomData.scale;
+            }
+            shape.geometry.attributes.position.needsUpdate = true;
+          })
+          .start();
+        break;
+
+      case 'dissolve':
+        // Dissolve effect - random vertex displacement
+        const dissolveData = { strength: 0 };
+        shape.userData.originalVertices = [...shape.geometry.attributes.position.array];
+        shape.userData.randomOffsets = Array(shape.geometry.attributes.position.array.length)
+          .fill(0)
+          .map(() => (Math.random() - 0.5) * 2);
+        
+        new TWEEN.Tween(dissolveData)
+          .to({ strength: morphIntensity }, duration / morphSpeed)
+          .yoyo(true)
+          .repeat(Infinity)
+          .easing(TWEEN.Easing.Sinusoidal.InOut)
+          .onUpdate(() => {
+            const positions = shape.geometry.attributes.position.array;
+            for(let i = 0; i < positions.length; i++) {
+              positions[i] = shape.userData.originalVertices[i] + 
+                shape.userData.randomOffsets[i] * dissolveData.strength;
+            }
+            shape.geometry.attributes.position.needsUpdate = true;
+          })
+          .start();
+        break;
+    }
+  }
+
+  // Event Listeners für Controls
+  // Event Listeners für Controls
+  speedRange.addEventListener("input", function(){
+    const value = speedRange.value;
+    speedValue.textContent = `Geschwindigkeit: ${value}%`;
+    // Update Geschwindigkeit für existierende Formen
+    shapes.forEach(shape => {
+      const speed = value / 5000;
+      shape.userData.rotationSpeed = {
+        x: rand(-speed, speed),
+        y: rand(-speed, speed),
+        z: rand(-speed, speed)
+      };
+    });
+  });
+
+  randomnessRange.addEventListener("input", function(){
+    const value = randomnessRange.value;
+    randomnessValue.textContent = `Verzerrung: ${value}%`;
+  });
+
+  // Morphing Speed und Type Event Listener
+  // Get references to new controls
+  const morphIntensityRange = document.getElementById('morphIntensityRange');
+  const morphIntensityValue = document.getElementById('morphIntensityValue');
+
+  morphSpeedRange.addEventListener("input", function(){
+    const value = morphSpeedRange.value;
+    morphSpeedValue.textContent = `Morph-Speed: ${value}%`;
+    
+    // Update laufende Animationen
+    const morphType = morphSelect.value;
+    if (morphType !== 'none') {
+      shapes.forEach(shape => {
+        applyMorphEffect(shape, morphType, 1000 + rand(-200, 200));
+      });
+    }
+  });
+
+  morphIntensityRange.addEventListener("input", function(){
+    const value = morphIntensityRange.value;
+    morphIntensityValue.textContent = `Morph-Intensität: ${value}%`;
+    
+    // Update laufende Animationen
+    const morphType = morphSelect.value;
+    if (morphType !== 'none') {
+      shapes.forEach(shape => {
+        applyMorphEffect(shape, morphType, 1000 + rand(-200, 200));
+      });
+    }
+  });
+
+  morphSelect.addEventListener("change", function() {
+    const morphType = morphSelect.value;
+    shapes.forEach(shape => {
+      if (morphType === 'none') {
+        // Stoppe alle Animationen
+        if (shape.userData.currentTween) {
+          shape.userData.currentTween.stop();
+        }
+        // Reset Scale
+        shape.scale.set(1, 1, 1);
+      } else {
+        applyMorphEffect(shape, morphType, 1000 + rand(-200, 200));
+      }
+    });
+  });
+
+  spreadRange.addEventListener("input", function(){
+    const value = spreadRange.value;
+    spreadValue.textContent = `Abstand: ${value}%`;
+  });
+
+  sizeRange.addEventListener("input", function(){
+    sizeValue.textContent = "Aktuelle Größe: " + sizeRange.value + "px";
+  });
+
+  generateBtn.addEventListener("click", buildCollage);
+
+  // Initialisiere 3D-Scene
+  init3DScene();
+  updateShapes();
+
+  downloadBtn.addEventListener("click", async function(){
+    // Try to export the WebGL renderer canvas directly (better fidelity)
+    try {
+      if (!renderer || !renderer.domElement) throw new Error('No renderer');
+      // toDataURL can fail if the canvas is tainted by cross-origin textures
+      const webglDataUrl = renderer.domElement.toDataURL('image/png');
+
+      // create an export canvas sized to the collage area (account for DPR)
+      const rect = collageArea.getBoundingClientRect();
+      const scale = window.devicePixelRatio || 1;
+      const exportCanvas = document.createElement('canvas');
+      exportCanvas.width = Math.max(1, Math.round(rect.width * scale));
+      exportCanvas.height = Math.max(1, Math.round(rect.height * scale));
+      const ctx = exportCanvas.getContext('2d');
+      // white background
+      ctx.fillStyle = '#ffffff';
+      ctx.fillRect(0,0,exportCanvas.width, exportCanvas.height);
+
+      // draw the WebGL image into the export canvas
+      await new Promise((resolve, reject) => {
+        const img = new Image();
+        img.crossOrigin = 'anonymous';
+        img.onload = () => {
+          try {
+            // draw full size
+            ctx.drawImage(img, 0, 0, exportCanvas.width, exportCanvas.height);
+            resolve();
+          } catch(e) { reject(e); }
+        };
+        img.onerror = (e) => reject(e || new Error('Failed to load webgl data URL'));
+        img.src = webglDataUrl;
+      });
+
+      // download
+      const link = document.createElement('a');
+      link.download = 'collage_' + Date.now() + '.png';
+      link.href = exportCanvas.toDataURL('image/png');
+      link.click();
+      return;
+    } catch (err) {
+      console.warn('Direct WebGL export failed, falling back to html2canvas:', err);
+    }
+
+    // Fallback: html2canvas (may not capture WebGL content depending on CORS)
+    try {
+      const canvas = await html2canvas(collageArea,{backgroundColor:'#ffffff', useCORS:true, scale: window.devicePixelRatio || 1});
+      const link = document.createElement('a');
+      link.download = 'collage_' + Date.now() + '.png';
+      link.href = canvas.toDataURL('image/png');
+      link.click();
+    } catch (err) {
+      console.error('Export failed:', err);
+      alert('Export fehlgeschlagen. Ursache: ' + (err && err.message ? err.message : err));
+    }
+  });
+
+  // Start initial setup
+  init3DScene();
+  updateShapes();
+  buildCollage().then(() => {
+    console.log("Initial collage built successfully");
+  }).catch(err => {
+    console.error("Error building initial collage:", err);
+  });
+</script>
+
+</body>
+</html>
